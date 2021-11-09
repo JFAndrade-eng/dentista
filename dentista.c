@@ -6,49 +6,50 @@
 #define NTHREADS 50
 
 
-char dentista_ocupado = 0;
+int dentista_ocupado = 0;
 
-int numCliente=0, ncadeiras, tcadeiras;
+int numCliente=0, ncadeiras=0, tcadeiras;
 
 pthread_mutex_t lock_cadeira;
 pthread_mutex_t lock_dentista;
+pthread_mutex_t lock_mudanca_cliente;
 
 // pthread_cond_t proximo;
 sem_t proximo;
-sem_t current;
+sem_t liberado;
+sem_t entrei;
 
 
 void* dentista(void* arg){
    int i,*n = (int*)arg;
    for(i=0;i<*n;i++){
 
-      printf("------------------\n");
-      printf("Dentista eguando\n");
-      printf("------------------\n");
+      printf("------------------\nDentista eguando\n------------------\n");
 
-      // sem_wait(&current);
+      sem_post(&proximo);
       //Cliente Chegou
-      if (ncadeiras < tcadeiras) {
-         pthread_mutex_lock(&lock_cadeira);
-            ncadeiras++;
-         pthread_mutex_unlock(&lock_cadeira);
-      }
+      // if (ncadeiras < tcadeiras) {
+      //    pthread_mutex_lock(&lock_cadeira);
+      //       ncadeiras++;
+      //    pthread_mutex_unlock(&lock_cadeira);
+      // }
+      sem_wait(&entrei);
       printf("Dentista atendendo cliente %d\n",numCliente);
       usleep(100);
 
       //Acabou o atendimento
       printf("Acabou o atendimento do dentista no cliente %d\n",numCliente);
+      sem_post(&liberado);
       pthread_mutex_lock(&lock_dentista);
          dentista_ocupado = 0;
       pthread_mutex_unlock(&lock_dentista);
-      sem_post(&proximo);
 
    }
 }
 
 void* cliente(void* arg){
    int n = *((int *)arg);
-   if(dentista_ocupado){// ALTERE ESTA CONDICAO: DENTISTA OCUPADO
+   if(dentista_ocupado == 1){// ALTERE ESTA CONDICAO: DENTISTA OCUPADO
       if(ncadeiras > 0) { // ALTERAR ESTA CONDICAO: Se existem cadeiras livres
          pthread_mutex_lock(&lock_cadeira);
             printf("Cliente %d sentando na cadeira %d da fila de espera\n",n,ncadeiras--);
@@ -64,13 +65,17 @@ void* cliente(void* arg){
    sem_wait(&proximo);
    pthread_mutex_lock(&lock_dentista);
       dentista_ocupado = 1;
-      numCliente = n;
-      // sem_post(&current);
-      printf("Cliente %d sendo atendido\n",n);
    pthread_mutex_unlock(&lock_dentista);
 
+   pthread_mutex_lock(&lock_mudanca_cliente);
+      numCliente = n;
+      printf("Cliente %d sendo atendido\n",numCliente);
+   pthread_mutex_unlock(&lock_mudanca_cliente);
+   sem_post(&entrei);
+
    // Acabou o Atendimento - como representar isso?
-   printf("Cliente %d indo embora\n",n);
+   sem_wait(&liberado);
+   printf("Cliente %d indo embora\n",numCliente);
    return NULL;
 }
 
@@ -80,9 +85,11 @@ int main(int argc,char* argv[]){
 
    pthread_mutex_init(&lock_cadeira, NULL);
    pthread_mutex_init(&lock_dentista, NULL);
+   pthread_mutex_init(&lock_mudanca_cliente, NULL);
    // pthread_cond_init(&proximo, NULL);
    sem_init(&proximo, 0, 0);
-   sem_init(&current, 0, 0);
+   sem_init(&liberado, 0, 0);
+   sem_init(&entrei, 0, 0);
 
    if(argc<3){
       fprintf(stderr,"Uso %s <nclientes> <ncadeiras>\n",argv[0]);
